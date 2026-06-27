@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#030712">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="180x180" href="apple-touch-icon.png">
+  <title>ValidadeSafe</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+
+    .tab-btn { color: #6b7280; position: relative; transition: color .15s; }
+    .tab-btn.active { color: #4ade80; }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 10%; right: 10%;
+      height: 2px;
+      background: #4ade80;
+      border-radius: 1px 1px 0 0;
+    }
+
+    .suggest-box {
+      position: absolute;
+      top: calc(100% + 2px); left: 0; right: 0;
+      z-index: 200;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      max-height: 196px;
+      overflow-y: auto;
+      box-shadow: 0 8px 28px rgba(0,0,0,.65);
+    }
+    .sug-item {
+      padding: 13px 16px;
+      font-size: 15px;
+      color: #cbd5e1;
+      cursor: pointer;
+      border-bottom: 1px solid #1e293b;
+      user-select: none;
+    }
+    .sug-item:last-child { border-bottom: none; }
+    .sug-item:active, .sug-item.hi { background: #334155; color: #fff; }
+
+    input, button { font-size: 16px !important; }
+    input[type="date"] { color-scheme: dark; }
+
+    .card { transition: opacity .15s, transform .1s; }
+    .card:active { opacity: .88; transform: scale(.99); }
+
+    .act-btn {
+      width: 46px; height: 46px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      transition: background .12s, transform .1s;
+    }
+    .act-btn:active { transform: scale(.9); }
+
+    @keyframes toIn  { from { opacity:0; transform: translateY(14px) scale(.96); } to { opacity:1; transform: translateY(0) scale(1); } }
+    @keyframes toOut { to   { opacity:0; transform: translateY(8px)  scale(.96); } }
+    .t-in  { animation: toIn  .2s ease forwards; }
+    .t-out { animation: toOut .25s ease forwards; }
+
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 max-w-lg mx-auto" style="height:100dvh;display:flex;flex-direction:column;overflow:hidden;">
+
+<!-- ── HEADER + NAV ── -->
+<div class="flex-shrink-0 bg-gray-900 border-b border-gray-800">
+  <header class="px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="text-green-400 text-xl font-bold">✓</span>
+      <h1 class="text-lg font-bold text-white tracking-tight">ValidadeSafe</h1>
+      <span id="badge" class="hidden bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-5 text-center"></span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="connDot" class="w-2 h-2 rounded-full bg-yellow-400" title="Conectando…"></span>
+      <span id="totalLabel" class="text-gray-500 text-sm"></span>
+    </div>
+  </header>
+  <nav class="flex border-t border-gray-800">
+    <button id="tb-painel" onclick="goTab('painel')" class="tab-btn active flex-1 py-3.5 text-xs font-bold uppercase tracking-widest">
+      Painel
+    </button>
+    <button id="tb-novo" onclick="goTab('novo')" class="tab-btn flex-1 py-3.5 text-xs font-bold uppercase tracking-widest">
+      + Novo
+    </button>
+  </nav>
+</div>
+
+<!-- ── CONTENT AREA ── -->
+<div class="flex-1 overflow-hidden relative">
+
+  <!-- PAINEL SCREEN -->
+  <div id="screen-painel" class="absolute inset-0 flex flex-col">
+    <!-- Search -->
+    <div class="px-4 pt-3 pb-2 flex-shrink-0">
+      <div class="relative">
+        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="7" stroke-width="2"/><path d="m21 21-3.5-3.5" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input id="search" type="search" placeholder="Buscar produto, marca ou tipo…"
+          oninput="onSearch(this.value)"
+          class="w-full bg-gray-800 border border-gray-700 rounded-2xl pl-10 pr-4 py-3 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors">
+      </div>
+    </div>
+    <!-- Stats chips -->
+    <div id="stats" class="px-4 pb-2 flex gap-2 flex-wrap flex-shrink-0"></div>
+    <!-- List -->
+    <div id="list" class="flex-1 overflow-y-auto px-4 pb-6 space-y-2"></div>
+    <!-- Empty -->
+    <div id="empty" class="hidden absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-8 pointer-events-none">
+      <span class="text-6xl">📦</span>
+      <p class="text-gray-300 font-semibold text-lg">Nenhum produto</p>
+      <p class="text-gray-500 text-sm">Toque em <strong class="text-gray-400">+ Novo</strong> para cadastrar</p>
+    </div>
+  </div>
+
+  <!-- NOVO SCREEN -->
+  <div id="screen-novo" class="hidden absolute inset-0 overflow-y-auto px-4 py-5 space-y-4">
+
+    <p class="text-xs font-bold uppercase tracking-widest text-gray-500">Novo Produto</p>
+
+    <!-- Produto -->
+    <div class="relative">
+      <label class="block text-xs font-bold uppercase tracking-wide text-gray-400 mb-1.5">
+        Produto <span class="text-red-400">*</span>
+      </label>
+      <input id="f-produto" type="text" placeholder="ex: Biscoito, Leite, Macarrão"
+        autocomplete="off" spellcheck="false"
+        data-field="produto" data-next="f-marca"
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors">
+    </div>
+
+    <!-- Marca -->
+    <div class="relative">
+      <label class="block text-xs font-bold uppercase tracking-wide text-gray-400 mb-1.5">Marca</label>
+      <input id="f-marca" type="text" placeholder="ex: Vitarela, Barilla, Parmalat"
+        autocomplete="off" spellcheck="false"
+        data-field="marca" data-next="f-tipo"
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors">
+    </div>
+
+    <!-- Tipo -->
+    <div class="relative">
+      <label class="block text-xs font-bold uppercase tracking-wide text-gray-400 mb-1.5">Tipo / Variação</label>
+      <input id="f-tipo" type="text" placeholder="ex: Recheado Chocolate, Integral, 500g"
+        autocomplete="off" spellcheck="false"
+        data-field="tipo" data-next="f-data"
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors">
+    </div>
+
+    <!-- Validade + Alerta -->
+    <div class="flex gap-3">
+      <div class="flex-1 relative">
+        <label class="block text-xs font-bold uppercase tracking-wide text-gray-400 mb-1.5">
+          Validade <span class="text-red-400">*</span>
+        </label>
+        <input id="f-data" type="date"
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3.5 text-gray-100 focus:outline-none focus:border-green-500 transition-colors">
+      </div>
+      <div class="w-[88px]">
+        <label class="block text-xs font-bold uppercase tracking-wide text-gray-400 mb-1.5">Alerta (d)</label>
+        <input id="f-alerta" type="number" value="7" min="1" max="365"
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3.5 text-gray-100 text-center focus:outline-none focus:border-green-500 transition-colors">
+      </div>
+    </div>
+
+    <!-- Atalhos de data -->
+    <div>
+      <p class="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Atalhos de Data</p>
+      <div class="grid grid-cols-4 gap-2">
+        <button onclick="quickDate(15)"  class="bg-gray-800 border border-gray-700 hover:bg-gray-700 active:scale-95 rounded-xl py-4 text-sm font-bold text-blue-400 transition-all">+15d</button>
+        <button onclick="quickDate(30)"  class="bg-gray-800 border border-gray-700 hover:bg-gray-700 active:scale-95 rounded-xl py-4 text-sm font-bold text-blue-400 transition-all">+30d</button>
+        <button onclick="quickDate(60)"  class="bg-gray-800 border border-gray-700 hover:bg-gray-700 active:scale-95 rounded-xl py-4 text-sm font-bold text-blue-300 transition-all">+60d</button>
+        <button onclick="quickDate(90)"  class="bg-gray-800 border border-gray-700 hover:bg-gray-700 active:scale-95 rounded-xl py-4 text-sm font-bold text-blue-300 transition-all">+90d</button>
+      </div>
+    </div>
+
+    <!-- Save -->
+    <button onclick="saveProduct()"
+      class="w-full bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-[.98] rounded-2xl py-4 font-bold text-white text-base shadow-lg shadow-green-950/50 transition-all">
+      ✓ Salvar Produto
+    </button>
+
+    <!-- Clear -->
+    <button onclick="clearForm()"
+      class="w-full py-3 text-sm text-gray-600 hover:text-gray-400 transition-colors">
+      Limpar formulário
+    </button>
+    <div class="h-4"></div>
+  </div>
+
+</div><!-- /content -->
+
+<!-- TOAST -->
+<div id="toast" class="hidden fixed bottom-6 left-4 right-4 max-w-sm mx-auto z-50 pointer-events-none">
+  <div id="toast-inner" class="rounded-2xl px-4 py-3.5 text-sm font-medium shadow-2xl pointer-events-auto"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// DATABASE — Supabase
+// ═══════════════════════════════════════════════════════
+const SUPA_URL = '';
+const SUPA_KEY = '';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY, { db: { schema: 'validadesafe' } });
+
+// Mapeia registro Supabase (snake_case) para o formato interno do app (camelCase)
+function fromRow(r) {
+  return {
+    id:           r.id,
+    produto:      r.produto,
+    marca:        r.marca  || '',
+    tipo:         r.tipo   || '',
+    dataValidade: r.data_validade,
+    diasAlerta:   r.dias_alerta ?? 7,
+  };
+}
+
+async function dbAll() {
+  const { data, error } = await supa
+    .from('produtos')
+    .select('*')
+    .order('data_validade', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(fromRow);
+}
+
+async function dbAdd(item) {
+  const { data, error } = await supa
+    .from('produtos')
+    .insert({
+      produto:       item.produto,
+      marca:         item.marca        || '',
+      tipo:          item.tipo         || '',
+      data_validade: item.dataValidade,
+      dias_alerta:   item.diasAlerta   ?? 7,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return fromRow(data);
+}
+
+async function dbDel(id) {
+  const { error } = await supa.from('produtos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+function setConn(ok) {
+  const dot = document.getElementById('connDot');
+  dot.className = `w-2 h-2 rounded-full ${ok ? 'bg-green-400' : 'bg-red-500'}`;
+  dot.title = ok ? 'Online' : 'Sem conexão';
+}
+
+function setupRealtime() {
+  supa.channel('produtos-live')
+    .on('postgres_changes', { event: '*', schema: 'validadesafe', table: 'produtos' },
+      async () => {
+        try {
+          products = await dbAll();
+          rebuildVocab();
+          render();
+        } catch (_) {}
+      })
+    .subscribe(status => {
+      setConn(status === 'SUBSCRIBED');
+    });
+}
+
+// ═══════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════
+let products = [], vocab = { produto: [], marca: [], tipo: [] }, query = '';
+let undoItem = null, undoTimer = null;
+
+function rebuildVocab() {
+  const s = { produto: new Set(), marca: new Set(), tipo: new Set() };
+  products.forEach(p => {
+    if (p.produto) s.produto.add(p.produto);
+    if (p.marca)   s.marca.add(p.marca);
+    if (p.tipo)    s.tipo.add(p.tipo);
+  });
+  vocab = {
+    produto: [...s.produto].sort((a, b) => a.localeCompare(b, 'pt')),
+    marca:   [...s.marca].sort((a, b) => a.localeCompare(b, 'pt')),
+    tipo:    [...s.tipo].sort((a, b) => a.localeCompare(b, 'pt')),
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+// DATE UTILS
+// ═══════════════════════════════════════════════════════
+const pad = n => String(n).padStart(2, '0');
+
+function dateStr(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+function diffDays(s) {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const t   = new Date(s + 'T00:00:00');
+  return Math.round((t - now) / 86400000);
+}
+
+function fmtBR(s) {
+  const [y, m, d] = s.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function statusOf(diff, alerta) {
+  if (diff <= 3) return 'red';
+  if (diff <= alerta) return 'yellow';
+  return 'green';
+}
+
+// ═══════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════
+function goTab(t) {
+  ['painel', 'novo'].forEach(x => {
+    document.getElementById(`screen-${x}`).classList.toggle('hidden', x !== t);
+    document.getElementById(`tb-${x}`).classList.toggle('active', x === t);
+  });
+  if (t === 'novo') setTimeout(() => document.getElementById('f-produto').focus(), 80);
+}
+
+// ═══════════════════════════════════════════════════════
+// SEARCH
+// ═══════════════════════════════════════════════════════
+function onSearch(v) { query = v; render(); }
+
+// ═══════════════════════════════════════════════════════
+// AUTOCOMPLETE
+// ═══════════════════════════════════════════════════════
+function setupAC(el) {
+  const field  = el.dataset.field;
+  const nextId = el.dataset.next;
+
+  const box = document.createElement('div');
+  box.className = 'suggest-box hidden';
+  el.parentElement.appendChild(box);
+
+  let hi = -1;
+
+  function populate() {
+    const q = el.value.trim().toLowerCase();
+    if (!q) { box.classList.add('hidden'); hi = -1; return; }
+
+    const hits = vocab[field]
+      .filter(v => v.toLowerCase().includes(q) && v !== el.value)
+      .slice(0, 7);
+
+    if (!hits.length) { box.classList.add('hidden'); hi = -1; return; }
+
+    box.innerHTML = hits.map(h => `<div class="sug-item">${esc(h)}</div>`).join('');
+    box.querySelectorAll('.sug-item').forEach(item => {
+      const pick = () => {
+        el.value = item.textContent;
+        box.classList.add('hidden'); hi = -1;
+        if (nextId) document.getElementById(nextId)?.focus();
+      };
+      item.addEventListener('touchstart', e => { e.preventDefault(); pick(); }, { passive: false });
+      item.addEventListener('mousedown',  e => { e.preventDefault(); pick(); });
+    });
+
+    box.classList.remove('hidden');
+  }
+
+  el.addEventListener('input', populate);
+  el.addEventListener('focus', populate);
+  el.addEventListener('blur',  () => setTimeout(() => { box.classList.add('hidden'); hi = -1; }, 160));
+  el.addEventListener('keydown', e => {
+    const items = [...box.querySelectorAll('.sug-item')];
+    if (box.classList.contains('hidden') || !items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault(); hi = Math.min(hi + 1, items.length - 1);
+      items.forEach((x, i) => x.classList.toggle('hi', i === hi));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); hi = Math.max(hi - 1, 0);
+      items.forEach((x, i) => x.classList.toggle('hi', i === hi));
+    } else if (e.key === 'Enter' && hi >= 0) {
+      e.preventDefault();
+      el.value = items[hi].textContent;
+      box.classList.add('hidden'); hi = -1;
+      if (nextId) document.getElementById(nextId)?.focus();
+    } else if (e.key === 'Escape' || e.key === 'Tab') {
+      box.classList.add('hidden'); hi = -1;
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// FORM
+// ═══════════════════════════════════════════════════════
+function quickDate(n) {
+  document.getElementById('f-data').value = dateStr(n);
+  navigator.vibrate?.(20);
+}
+
+function clearForm() {
+  ['f-produto', 'f-marca', 'f-tipo'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-data').value   = '';
+  document.getElementById('f-alerta').value = '7';
+}
+
+function markInvalid(id) {
+  const el = document.getElementById(id);
+  el.classList.add('border-red-500');
+  setTimeout(() => el.classList.remove('border-red-500'), 1400);
+  el.focus();
+}
+
+async function saveProduct() {
+  const produto = document.getElementById('f-produto').value.trim();
+  const data    = document.getElementById('f-data').value;
+
+  if (!produto) { markInvalid('f-produto'); toast('⚠️ Informe o nome do produto', 'warn'); return; }
+  if (!data)    { markInvalid('f-data');    toast('⚠️ Informe a data de validade', 'warn'); return; }
+
+  const item = {
+    produto,
+    marca:        document.getElementById('f-marca').value.trim(),
+    tipo:         document.getElementById('f-tipo').value.trim(),
+    dataValidade: data,
+    diasAlerta:   parseInt(document.getElementById('f-alerta').value) || 7,
+  };
+
+  try {
+    await dbAdd(item);
+    products = await dbAll();
+    rebuildVocab();
+    clearForm();
+    render();
+    toast('✅ Produto salvo!', 'ok');
+    navigator.vibrate?.([35, 15, 35]);
+    goTab('painel');
+  } catch (e) {
+    toast('❌ Falha ao salvar — verifique a conexão', 'err');
+    console.error(e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// CLONE
+// ═══════════════════════════════════════════════════════
+function cloneProduct(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('f-produto').value = p.produto || '';
+  document.getElementById('f-marca').value   = p.marca   || '';
+  document.getElementById('f-tipo').value    = p.tipo    || '';
+  document.getElementById('f-data').value    = '';
+  document.getElementById('f-alerta').value  = p.diasAlerta || 7;
+  goTab('novo');
+  setTimeout(() => document.getElementById('f-data').focus(), 120);
+  toast('📋 Campos copiados — atualize a data!', 'info');
+  navigator.vibrate?.(25);
+}
+
+// ═══════════════════════════════════════════════════════
+// DELETE + UNDO
+// ═══════════════════════════════════════════════════════
+async function deleteProduct(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  try {
+    await dbDel(id);
+    undoItem = p;
+    products  = await dbAll();
+    rebuildVocab();
+    render();
+    navigator.vibrate?.(45);
+    clearTimeout(undoTimer);
+    const label = [p.produto, p.marca].filter(Boolean).join(' ');
+    showUndoToast(label);
+    undoTimer = setTimeout(() => { undoItem = null; }, 4600);
+  } catch (e) {
+    toast('❌ Falha ao remover', 'err');
+    console.error(e);
+  }
+}
+
+async function undoDelete() {
+  if (!undoItem) return;
+  clearTimeout(undoTimer);
+  const item = {
+    produto:      undoItem.produto,
+    marca:        undoItem.marca,
+    tipo:         undoItem.tipo,
+    dataValidade: undoItem.dataValidade,
+    diasAlerta:   undoItem.diasAlerta,
+  };
+  undoItem = null;
+  try {
+    await dbAdd(item);
+    products = await dbAll();
+    rebuildVocab();
+    render();
+    toast('↩ Restaurado!', 'ok');
+  } catch (e) {
+    toast('❌ Falha ao restaurar', 'err');
+    console.error(e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════
+const CARD  = { red: 'border-red-500 bg-red-950/60',    yellow: 'border-yellow-400 bg-yellow-950/50', green: 'border-emerald-500 bg-emerald-950/30' };
+const BDGE  = { red: 'bg-red-500 text-white',            yellow: 'bg-yellow-400 text-gray-900',        green: 'bg-emerald-600 text-white' };
+
+function diffLabel(diff) {
+  if (diff < 0)  return `Venceu há ${Math.abs(diff)}d`;
+  if (diff === 0) return 'HOJE!';
+  if (diff === 1) return '1 dia';
+  return `${diff}d`;
+}
+
+function render() {
+  const listEl  = document.getElementById('list');
+  const emptyEl = document.getElementById('empty');
+  const statsEl = document.getElementById('stats');
+
+  const q  = query.toLowerCase();
+  const filtered = products
+    .filter(p => !q ||
+      p.produto?.toLowerCase().includes(q) ||
+      p.marca?.toLowerCase().includes(q)   ||
+      p.tipo?.toLowerCase().includes(q))
+    .sort((a, b) => a.dataValidade.localeCompare(b.dataValidade));
+
+  const total = filtered.length;
+  document.getElementById('totalLabel').textContent = total
+    ? `${total} produto${total !== 1 ? 's' : ''}` : '';
+
+  const counts = { red: 0, yellow: 0, green: 0 };
+  filtered.forEach(p => { counts[statusOf(diffDays(p.dataValidade), p.diasAlerta || 7)]++; });
+
+  const badge = document.getElementById('badge');
+  if (counts.red > 0) { badge.textContent = counts.red; badge.classList.remove('hidden'); }
+  else badge.classList.add('hidden');
+
+  statsEl.innerHTML = total ? [
+    counts.red    ? `<span class="bg-red-900/70 border border-red-700/60 text-red-300 text-xs font-semibold px-3 py-1 rounded-full">🔴 ${counts.red} urgente${counts.red > 1 ? 's' : ''}</span>` : '',
+    counts.yellow ? `<span class="bg-yellow-900/60 border border-yellow-700/60 text-yellow-300 text-xs font-semibold px-3 py-1 rounded-full">🟡 ${counts.yellow} atenção</span>` : '',
+    counts.green  ? `<span class="bg-emerald-900/50 border border-emerald-700/50 text-emerald-400 text-xs font-semibold px-3 py-1 rounded-full">🟢 ${counts.green} ok</span>` : '',
+  ].join('') : '';
+
+  if (!total) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+  emptyEl.classList.add('hidden');
+
+  listEl.innerHTML = filtered.map(p => {
+    const diff  = diffDays(p.dataValidade);
+    const st    = statusOf(diff, p.diasAlerta || 7);
+    const name  = esc([p.produto, p.marca, p.tipo ? `(${p.tipo})` : ''].filter(Boolean).join(' '));
+    return `
+<div class="card flex items-center gap-2 p-3 rounded-2xl border-l-4 ${CARD[st]}">
+  <div class="flex-1 min-w-0">
+    <p class="font-semibold text-sm leading-snug">${name}</p>
+    <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+      <span class="text-gray-400 text-xs">${fmtBR(p.dataValidade)}</span>
+      <span class="text-xs font-bold px-2 py-0.5 rounded-full ${BDGE[st]}">${diffLabel(diff)}</span>
+    </div>
+  </div>
+  <div class="flex gap-1.5 flex-shrink-0">
+    <button onclick="cloneProduct(${p.id})" class="act-btn bg-blue-900/50 hover:bg-blue-800/70 text-blue-300" title="Clonar">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 00-2-2H5a2 2 0 00-2 2v9a2 2 0 002 2h3" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <button onclick="deleteProduct(${p.id})" class="act-btn bg-red-900/50 hover:bg-red-800/70 text-red-300" title="Dar baixa">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+        <path d="M5 13l4 4L19 7"/>
+      </svg>
+    </button>
+  </div>
+</div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════
+let toastTimer = null;
+const TSTYLE = {
+  ok:   'bg-emerald-800 border border-emerald-600/80 text-emerald-100',
+  warn: 'bg-yellow-800 border border-yellow-600/80 text-yellow-100',
+  err:  'bg-red-800 border border-red-600/80 text-red-100',
+  info: 'bg-blue-900 border border-blue-700/80 text-blue-100',
+};
+
+function toast(msg, type = 'info') {
+  clearTimeout(toastTimer);
+  const wrap  = document.getElementById('toast');
+  const inner = document.getElementById('toast-inner');
+  inner.className = `rounded-2xl px-4 py-3.5 text-sm font-medium text-center shadow-2xl t-in ${TSTYLE[type] || TSTYLE.info}`;
+  inner.textContent = msg;
+  wrap.classList.remove('hidden');
+  toastTimer = setTimeout(() => {
+    inner.classList.replace('t-in', 't-out');
+    setTimeout(() => wrap.classList.add('hidden'), 270);
+  }, 2600);
+}
+
+function showUndoToast(label) {
+  clearTimeout(toastTimer);
+  const wrap  = document.getElementById('toast');
+  const inner = document.getElementById('toast-inner');
+  inner.className = 'rounded-2xl px-4 py-3.5 text-sm font-medium shadow-2xl t-in bg-gray-800 border border-gray-600/80 text-gray-100 flex items-center justify-between gap-3';
+  inner.innerHTML = `<span>✓ ${esc(label)} removido</span><button onclick="undoDelete()" class="text-green-400 font-bold shrink-0 underline underline-offset-2">DESFAZER</button>`;
+  wrap.classList.remove('hidden');
+  toastTimer = setTimeout(() => {
+    inner.classList.replace('t-in', 't-out');
+    setTimeout(() => wrap.classList.add('hidden'), 270);
+  }, 4500);
+}
+
+// ═══════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+async function init() {
+  // Enter key flow: produto → marca → tipo → data → save
+  document.querySelectorAll('input[data-field]').forEach(setupAC);
+  const chain = [['f-produto','f-marca'],['f-marca','f-tipo'],['f-tipo','f-data']];
+  chain.forEach(([from, to]) => {
+    document.getElementById(from).addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); document.getElementById(to).focus(); }
+    });
+  });
+  document.getElementById('f-data').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); saveProduct(); }
+  });
+
+  try {
+    products = await dbAll();
+    rebuildVocab();
+    render();
+    setConn(true);
+  } catch (e) {
+    console.error('Supabase fetch failed:', e);
+    setConn(false);
+    toast('⚠️ Sem conexão com o servidor', 'warn');
+    render();
+  }
+
+  setupRealtime();
+}
+
+init();
+</script>
+</body>
+</html>
