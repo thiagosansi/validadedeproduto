@@ -211,7 +211,7 @@
 // ═══════════════════════════════════════════════════════
 const SUPA_URL = '';
 const SUPA_KEY = '';
-const supa = supabase.createClient(SUPA_URL, SUPA_KEY, { db: { schema: 'validadesafe' } });
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 // Mapeia registro Supabase (snake_case) para o formato interno do app (camelCase)
 function fromRow(r) {
@@ -263,7 +263,7 @@ function setConn(ok) {
 
 function setupRealtime() {
   supa.channel('produtos-live')
-    .on('postgres_changes', { event: '*', schema: 'validadesafe', table: 'produtos' },
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' },
       async () => {
         try {
           products = await dbAll();
