@@ -5,12 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#030712">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="180x180" href="apple-touch-icon.png">
   <title>ValidadeSafe</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 
@@ -68,6 +70,14 @@
 
     ::-webkit-scrollbar { width: 3px; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+    /* Scan modal */
+    #scan-modal { padding-top: env(safe-area-inset-top); }
+    #qr-reader { border: none !important; }
+    #qr-reader video { width: 100% !important; border-radius: 16px; }
+    #qr-reader img { display: none !important; }
+    #qr-reader__scan_region { border-radius: 16px; overflow: hidden; }
+    #qr-reader__scan_region img { display: none !important; }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-100 max-w-lg mx-auto" style="height:100dvh;display:flex;flex-direction:column;overflow:hidden;">
@@ -127,6 +137,16 @@
   <div id="screen-novo" class="hidden absolute inset-0 overflow-y-auto px-4 py-5 space-y-4">
 
     <p class="text-xs font-bold uppercase tracking-widest text-gray-500">Novo Produto</p>
+
+    <!-- Scan button -->
+    <button onclick="startScanner()"
+      class="w-full flex items-center justify-center gap-2.5 bg-gray-800 border border-gray-700 hover:bg-gray-700 active:scale-[.98] rounded-2xl py-4 font-bold text-gray-300 text-sm transition-all">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+        <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/>
+        <rect x="7" y="7" width="3" height="10" rx="1"/><rect x="11" y="7" width="1.5" height="10" rx="0.5"/><rect x="14" y="7" width="3" height="10" rx="1"/>
+      </svg>
+      Escanear Código de Barras
+    </button>
 
     <!-- Produto -->
     <div class="relative">
@@ -203,6 +223,25 @@
 <!-- TOAST -->
 <div id="toast" class="hidden fixed left-4 right-4 max-w-sm mx-auto z-50 pointer-events-none" style="bottom: calc(1.5rem + env(safe-area-inset-bottom));">
   <div id="toast-inner" class="rounded-2xl px-4 py-3.5 text-sm font-medium shadow-2xl pointer-events-auto"></div>
+</div>
+
+<!-- SCAN MODAL -->
+<div id="scan-modal" class="hidden fixed inset-0 z-50 bg-gray-950 flex flex-col">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
+    <p class="text-white font-bold tracking-tight">Escanear Código</p>
+    <button onclick="stopScanner()" class="act-btn bg-gray-800 text-gray-300">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div class="flex-1 flex flex-col items-center justify-center px-6 gap-5">
+    <div id="qr-reader" class="w-full max-w-sm rounded-2xl overflow-hidden"></div>
+    <div class="text-center">
+      <p id="scan-status" class="text-gray-400 text-sm">Aponte para o código de barras do produto</p>
+      <p class="text-gray-600 text-xs mt-1">EAN-13 · EAN-8 · Code 128</p>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -635,6 +674,71 @@ function showUndoToast(label) {
 // ═══════════════════════════════════════════════════════
 function esc(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════
+// BARCODE SCANNER
+// ═══════════════════════════════════════════════════════
+let qrScanner = null;
+
+async function startScanner() {
+  document.getElementById('scan-modal').classList.remove('hidden');
+  document.getElementById('scan-status').textContent = 'Iniciando câmera…';
+  try {
+    qrScanner = new Html5Qrcode('qr-reader');
+    await qrScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 280, height: 120 } },
+      async (code) => {
+        await stopScanner();
+        await fetchProduct(code);
+      },
+      () => {}
+    );
+    document.getElementById('scan-status').textContent = 'Aponte para o código de barras do produto';
+  } catch (err) {
+    document.getElementById('scan-status').textContent = 'Câmera indisponível ou permissão negada';
+    console.error(err);
+  }
+}
+
+async function stopScanner() {
+  if (qrScanner) {
+    try { await qrScanner.stop(); } catch (_) {}
+    try { qrScanner.clear(); } catch (_) {}
+    qrScanner = null;
+  }
+  document.getElementById('scan-modal').classList.add('hidden');
+}
+
+async function fetchProduct(barcode) {
+  toast('🔍 Buscando produto…', 'info');
+  try {
+    const res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    const json = await res.json();
+
+    if (json.status !== 1) {
+      toast('⚠️ Produto não encontrado — preencha manualmente', 'warn');
+      document.getElementById('f-produto').focus();
+      return;
+    }
+
+    const p     = json.product;
+    const nome  = (p.product_name_pt || p.product_name || '').trim();
+    const marca = (p.brands || '').split(',')[0].trim();
+    const tipo  = (p.quantity || '').trim();
+
+    if (nome)  document.getElementById('f-produto').value = nome;
+    if (marca) document.getElementById('f-marca').value   = marca;
+    if (tipo)  document.getElementById('f-tipo').value    = tipo;
+
+    toast('✅ Produto encontrado! Informe a validade.', 'ok');
+    navigator.vibrate?.([30, 10, 30]);
+    document.getElementById('f-data').focus();
+  } catch (err) {
+    toast('❌ Falha ao buscar produto', 'err');
+    console.error(err);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
