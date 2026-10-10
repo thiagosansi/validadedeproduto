@@ -12,6 +12,7 @@
   <title>ValidadeSafe</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/supabase-config.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
@@ -248,9 +249,8 @@
 // ═══════════════════════════════════════════════════════
 // DATABASE — Supabase
 // ═══════════════════════════════════════════════════════
-const SUPA_URL = '';
-const SUPA_KEY = '';
-const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+const { url: SUPA_URL = '', anonKey: SUPA_KEY = '' } = window.SUPABASE_CONFIG || {};
+const supa = SUPA_URL && SUPA_KEY ? supabase.createClient(SUPA_URL, SUPA_KEY) : null;
 
 // Mapeia registro Supabase (snake_case) para o formato interno do app (camelCase)
 function fromRow(r) {
@@ -265,6 +265,7 @@ function fromRow(r) {
 }
 
 async function dbAll() {
+  if (!supa) throw new Error('Supabase não configurado');
   const { data, error } = await supa
     .from('produtos')
     .select('*')
@@ -274,6 +275,7 @@ async function dbAll() {
 }
 
 async function dbAdd(item) {
+  if (!supa) throw new Error('Supabase não configurado');
   const { data, error } = await supa
     .from('produtos')
     .insert({
@@ -290,6 +292,7 @@ async function dbAdd(item) {
 }
 
 async function dbDel(id) {
+  if (!supa) throw new Error('Supabase não configurado');
   const { error } = await supa.from('produtos').delete().eq('id', id);
   if (error) throw error;
 }
@@ -301,6 +304,7 @@ function setConn(ok) {
 }
 
 function setupRealtime() {
+  if (!supa) return;
   supa.channel('produtos-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' },
       async () => {
